@@ -820,7 +820,7 @@ describe("DataCharts", () => {
       rows: mockNumericResult.rows.map((row, i) => (i === 0 ? { ...row, revenue: Number.POSITIVE_INFINITY } : row)),
     };
     capturedChartProps.length = 0;
-    render(React.createElement(DataCharts, { result: nonFinite }));
+    render(React.createElement(DataCharts, { result: nonFinite, maskingEnabled: false }));
     const data = capturedChartProps.at(-1)?.data as Array<Record<string, unknown>>;
     expect(data.every((point) => Number.isFinite(point.revenue))).toBe(true);
   });
@@ -839,7 +839,7 @@ describe("DataCharts", () => {
   // -----------------------------------------------------------------------
 
   test("Y-axis dropdown shows numeric field options", () => {
-    const { queryAllByRole } = render(React.createElement(DataCharts, { result: mockNumericResult }));
+    const { queryAllByRole } = render(React.createElement(DataCharts, { result: mockNumericResult, maskingEnabled: false }));
     const menuItems = queryAllByRole("menuitem");
     // Should have numeric fields: revenue, cost (revenue may have ✓ if auto-selected)
     const fieldNames = menuItems.map((el) => el.textContent || "");
@@ -1363,7 +1363,7 @@ describe("DataCharts", () => {
   });
 
   test("clicking an already-selected Y-axis field deselects it", () => {
-    const { getAllByRole, queryByText } = render(React.createElement(DataCharts, { result: mockNumericResult }));
+    const { getAllByRole, queryByText } = render(React.createElement(DataCharts, { result: mockNumericResult, maskingEnabled: false }));
     // revenue is auto-selected as the first numeric field
     expect(queryByText("Select fields")).toBeNull();
     const revenueItem = getAllByRole("menuitem").find((i) => i.textContent?.includes("revenue"));

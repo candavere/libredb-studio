@@ -592,10 +592,12 @@ describe("display masking (#1939)", () => {
 
     // Three groups survive with their own counts: one row per raw value, not one merged
     // masked row, and the null group keeps the grid's "NULL" rather than a fake mask.
+    // Masked-label order (#1491): the two groups sharing one mask come first in
+    // first-seen order (alice's 2 before al123's 1), and "NULL" sorts after the mask text.
     const bodyRows = container.querySelectorAll("tbody tr");
     expect(bodyRows.length).toBe(3);
-    expect(bodyRows[0]?.textContent).toContain("1");
-    expect(bodyRows[1]?.textContent).toContain("2");
+    expect(bodyRows[0]?.textContent).toContain("2");
+    expect(bodyRows[1]?.textContent).toContain("1");
     expect(bodyRows[2]?.textContent).toContain("NULL");
     expect(bodyRows[2]?.textContent).not.toContain("@");
   });
@@ -632,9 +634,10 @@ describe("display masking (#1939)", () => {
 
     const json = JSON.parse(calls[calls.length - 1][0] as string) as Record<string, unknown>[];
     // al123@example.com masks to the same text; the second column takes the result's own
-    // "name (2)" spelling instead of overwriting the first group's column.
+    // "name (2)" spelling instead of overwriting the first group's column. The shared
+    // mask sorts the columns, and the first-seen tie puts alice's group first (#1491).
     expect(json).toEqual([
-      { dept: "Engineering", [mask]: "0", [`${mask} (2)`]: "1", NULL: "0" },
+      { dept: "Engineering", [mask]: "1", [`${mask} (2)`]: "0", NULL: "0" },
       { dept: "Sales", [mask]: "1", [`${mask} (2)`]: "1", NULL: "1" },
     ]);
   });
@@ -652,9 +655,11 @@ describe("display masking (#1939)", () => {
     expect(csv).not.toContain("al123@example.com");
 
     const json = JSON.parse(calls[calls.length - 1][0] as string) as Record<string, unknown>[];
+    // Masked-label order (#1491): alice's group first (first-seen tie on the shared
+    // mask), then al123's, then "NULL".
     expect(json).toEqual([
-      { email: maskEmail("al123@example.com"), "COUNT(*)": "1" },
       { email: maskEmail("alice@example.com"), "COUNT(*)": "2" },
+      { email: maskEmail("al123@example.com"), "COUNT(*)": "1" },
       { email: "NULL", "COUNT(*)": "1" },
     ]);
   });
