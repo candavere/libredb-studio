@@ -73,6 +73,16 @@ export function aggregate(values: unknown[], fn: AggFunction): string {
   }
 }
 
+/**
+ * A group key as the text it is DRAWN as, lowercased for a sort: a masked field's
+ * keys order by their mask (#1491's rule in the grid), so the rank of the hidden
+ * prefixes never leaks through the row order. Ties keep first-seen order
+ * (Array#sort is stable).
+ */
+function maskedLabel(labels: Map<string, string>, key: string): string {
+  return (labels.get(key) ?? key).toLowerCase();
+}
+
 export function PivotTable({
   result,
   onLoadQuery,
@@ -163,7 +173,17 @@ export function PivotTable({
       colMap.get(colKey)!.push(value);
     }
 
-    const colKeys = colField ? Array.from(colValues).sort((a, b) => a.localeCompare(b)) : ["__all__"];
+    // Masked keys sort by their masked label, as the grid's maskedSortFns do (#1491):
+    // the raw-key sort leaks the rank of the hidden prefixes (ssn values 900-11-0001,
+    // 100-22-0002, 500-33-0003 would read 0002, 0003, 0001). The label maps are already
+    // built in the loop above; ties keep first-seen order. (#1939)
+    const rowMasked = sensitiveColumns.has(rowField);
+    const colMasked = colField !== null && sensitiveColumns.has(colField);
+    const colKeys = colField
+      ? Array.from(colValues).sort((a, b) =>
+          colMasked ? maskedLabel(colKeyLabels, a).localeCompare(maskedLabel(colKeyLabels, b)) : a.localeCompare(b),
+        )
+      : ["__all__"];
 
     // Build pivot rows
     const pivotRows: { rowKey: string; values: Map<string, string> }[] = [];
@@ -176,11 +196,15 @@ export function PivotTable({
       pivotRows.push({ rowKey, values });
     }
 
-    // Sort by row key
-    pivotRows.sort((a, b) => a.rowKey.localeCompare(b.rowKey));
+    // Sort by row key — by masked label when the row field is masked (see above).
+    pivotRows.sort((a, b) =>
+      rowMasked
+        ? maskedLabel(rowKeyLabels, a.rowKey).localeCompare(maskedLabel(rowKeyLabels, b.rowKey))
+        : a.rowKey.localeCompare(b.rowKey),
+    );
 
     return { colKeys, pivotRows, rowKeyLabels, colKeyLabels };
-  }, [rows, rowField, colField, effectiveValueField, aggFunction, labelFor]);
+  }, [rows, rowField, colField, effectiveValueField, aggFunction, labelFor, sensitiveColumns]);
 
   const exportPivot = useCallback(
     (format: "csv" | "json") => {

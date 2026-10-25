@@ -560,6 +560,8 @@ describe("PivotTable", () => {
 describe("display masking (#1939)", () => {
   const emailPattern = DEFAULT_MASKING_CONFIG.patterns.find((p) => p.id === "builtin-email")!;
   const maskEmail = (value: unknown) => maskValueByPattern(value, emailPattern);
+  const ssnPattern = DEFAULT_MASKING_CONFIG.patterns.find((p) => p.id === "builtin-ssn")!;
+  const maskSsn = (value: unknown) => maskValueByPattern(value, ssnPattern);
   const maskingProps = {
     maskingEnabled: true,
     userRole: "admin",
@@ -700,5 +702,131 @@ describe("display masking (#1939)", () => {
   test("shows raw values while masking is off", () => {
     const { container } = render(<PivotTable result={emailResult} />);
     expect(container.textContent).toContain("alice@example.com");
+  });
+
+  test("shows raw keys while masking is off, config still handed in", () => {
+    // maskingEnabled: false wins over the config: the keys read in the clear even
+    // though a config is present. This pins existing behavior.
+    const { container } = render(
+      <PivotTable
+        result={emailResult}
+        maskingEnabled={false}
+        userRole="admin"
+        maskingConfig={DEFAULT_MASKING_CONFIG}
+      />,
+    );
+    expect(container.textContent).toContain("alice@example.com");
+    expect(container.textContent).toContain("al123@example.com");
+  });
+
+  // The pivot used to order its keys by the RAW value, so 900-11-0001, 100-22-0002 and
+  // 500-33-0003 read 0002, 0003, 0001: the rank of the hidden prefixes leaks. The grid
+  // has sorted masked fields by their masked label since #1491; the pivot and its
+  // download do the same now, ties in first-seen order (#1939, PR #1957 review).
+  const ssnResult: QueryResult = {
+    rows: [
+      { ssn: "900-11-0001", logins: 3 },
+      { ssn: "100-22-0002", logins: 1 },
+      { ssn: "500-33-0003", logins: 2 },
+    ],
+    fields: ["ssn", "logins"],
+    rowCount: 3,
+    executionTime: 1,
+  };
+
+  test("sorts masked row keys by their masked label, on screen and in the CSV", () => {
+    const { container, getByText } = render(<PivotTable result={ssnResult} {...maskingProps} />);
+    fireEvent.click(getByText("SUM"));
+
+    const bodyRows = [...container.querySelectorAll("tbody tr")];
+    expect(bodyRows.map((tr) => tr.querySelector("td")?.textContent)).toEqual([
+      maskSsn("900-11-0001"),
+      maskSsn("100-22-0002"),
+      maskSsn("500-33-0003"),
+    ]);
+    // The aggregates ride with their group, so the order is provable beyond the labels.
+    expect(bodyRows.map((tr) => tr.querySelectorAll("td")[1]?.textContent)).toEqual(["3.00", "1.00", "2.00"]);
+
+    fireEvent.click(getByText("Export as CSV"));
+    const csv = mockDownloadText.mock.calls.at(-1)![0] as string;
+    const dataLines = csv.split("\n").slice(1);
+    expect(dataLines.map((line) => line.split(",")[0])).toEqual([
+      maskSsn("900-11-0001"),
+      maskSsn("100-22-0002"),
+      maskSsn("500-33-0003"),
+    ]);
+    expect(dataLines.map((line) => line.split(",")[1])).toEqual(["3.00", "1.00", "2.00"]);
+    // And no raw key anywhere in the download.
+    expect(csv).not.toContain("900-11-0001");
+    expect(csv).not.toContain("100-22-0002");
+    expect(csv).not.toContain("500-33-0003");
+  });
+
+  const ssnColumnResult: QueryResult = {
+    rows: [
+      { dept: "Engineering", ssn: "900-11-0001", logins: 3 },
+      { dept: "Engineering", ssn: "100-22-0002", logins: 1 },
+      { dept: "Sales", ssn: "500-33-0003", logins: 2 },
+    ],
+    fields: ["dept", "ssn", "logins"],
+    rowCount: 3,
+    executionTime: 1,
+  };
+
+  test("sorts masked column keys by their masked label, in the header and the CSV", () => {
+    const { container, getByText } = render(<PivotTable result={ssnColumnResult} {...maskingProps} />);
+    const selects = container.querySelectorAll("select");
+    fireEvent.change(selects[0]!, { target: { value: "dept" } });
+    fireEvent.change(selects[1]!, { target: { value: "ssn" } });
+
+    expect([...container.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
+      "dept",
+      maskSsn("900-11-0001"),
+      maskSsn("100-22-0002"),
+      maskSsn("500-33-0003"),
+    ]);
+
+    fireEvent.click(getByText("Export as CSV"));
+    const csv = mockDownloadText.mock.calls.at(-1)![0] as string;
+    expect(csv.split("\n")[0]).toBe(
+      ["dept", maskSsn("900-11-0001"), maskSsn("100-22-0002"), maskSsn("500-33-0003")].join(","),
+    );
+    expect(csv).not.toContain("900-11-0001");
+    expect(csv).not.toContain("100-22-0002");
+    expect(csv).not.toContain("500-33-0003");
+  });
+
+  // Two raw values whose masks are identical cannot be ordered by their labels; the
+  // stable sort keeps first-seen order, and the DIFFERENT aggregates prove which raw
+  // group landed where — the labels alone could not.
+  const ssnTieResult: QueryResult = {
+    rows: [
+      { ssn: "900-11-0001", logins: 5 },
+      { ssn: "100-22-0001", logins: 2 },
+    ],
+    fields: ["ssn", "logins"],
+    rowCount: 2,
+    executionTime: 1,
+  };
+
+  test("keeps first-seen order when two masked labels tie", () => {
+    const { container, getByText } = render(<PivotTable result={ssnTieResult} {...maskingProps} />);
+    fireEvent.click(getByText("SUM"));
+
+    const bodyRows = [...container.querySelectorAll("tbody tr")];
+    expect(bodyRows.map((tr) => tr.querySelector("td")?.textContent)).toEqual([
+      maskSsn("900-11-0001"),
+      maskSsn("100-22-0001"),
+    ]);
+    expect(bodyRows.map((tr) => tr.querySelectorAll("td")[1]?.textContent)).toEqual(["5.00", "2.00"]);
+
+    fireEvent.click(getByText("Export as CSV"));
+    const csv = mockDownloadText.mock.calls.at(-1)![0] as string;
+    expect(
+      csv
+        .split("\n")
+        .slice(1)
+        .map((line) => line.split(",")[1]),
+    ).toEqual(["5.00", "2.00"]);
   });
 });

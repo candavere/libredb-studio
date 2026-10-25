@@ -23,7 +23,13 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import { type AgentChartSpec, QueryResult } from "@/lib/types";
-import { maskValueByPattern, maskingInForce, type MaskingConfig, type MaskingPattern } from "@/lib/data-masking";
+import {
+  loadMaskingConfig,
+  maskValueByPattern,
+  maskingInForce,
+  type MaskingConfig,
+  type MaskingPattern,
+} from "@/lib/data-masking";
 import { splitMaskedColumns } from "@/lib/db/masking-exemption";
 import type { ProviderCapabilities } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
@@ -113,7 +119,8 @@ interface DataChartsProps {
    * The grid's masking inputs, handed down the same way the graph view takes them
    * (#1939). While masking is in force a masked column's CATEGORIES are drawn masked
    * and its numbers are never plotted: the mask text is not numeric, and the raw
-   * numbers must not appear. Undefined config means no masking.
+   * numbers must not appear. An undefined config falls back to the saved one
+   * (`loadMaskingConfig`), as the grid and the profiler do.
    */
   maskingEnabled?: boolean;
   userRole?: string;
@@ -548,14 +555,18 @@ export function DataCharts({
   /** The supplied specification, or null when there is none this result can carry. */
   const appliedSpec = useMemo(() => (spec !== null && specApplies(spec, analysis) ? spec : null), [spec, analysis]);
 
+  // No config handed in falls back to the SAVED one, as ResultsGrid (`maskingConfig ??
+  // loadMaskingConfig()`) and the DataProfiler already do: undefined used to read as no
+  // masking, and the chart plotted numbers the grid was hiding (#1939, PR #1957 review).
+  const resolvedMaskingConfig = maskingConfig ?? loadMaskingConfig();
   // The grid's own masking decision for THIS result, exemptions included, so the chart
   // and the grid can never disagree about one column (#1421, #1939).
   const sensitiveColumns = useMemo(
     () =>
-      result === null || maskingConfig === undefined || !maskingInForce(userRole, maskingConfig, maskingEnabled)
+      result === null || !maskingInForce(userRole, resolvedMaskingConfig, maskingEnabled)
         ? new Map<string, MaskingPattern>()
-        : splitMaskedColumns(result.fields, maskingConfig, maskingExemptColumns).masked,
-    [result, maskingConfig, userRole, maskingEnabled, maskingExemptColumns],
+        : splitMaskedColumns(result.fields, resolvedMaskingConfig, maskingExemptColumns).masked,
+    [result, resolvedMaskingConfig, userRole, maskingEnabled, maskingExemptColumns],
   );
 
   // A masked column can be a category - drawn masked - but never a number source while
