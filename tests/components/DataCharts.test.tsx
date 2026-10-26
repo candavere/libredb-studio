@@ -839,7 +839,9 @@ describe("DataCharts", () => {
   // -----------------------------------------------------------------------
 
   test("Y-axis dropdown shows numeric field options", () => {
-    const { queryAllByRole } = render(React.createElement(DataCharts, { result: mockNumericResult, maskingEnabled: false }));
+    const { queryAllByRole } = render(
+      React.createElement(DataCharts, { result: mockNumericResult, maskingEnabled: false }),
+    );
     const menuItems = queryAllByRole("menuitem");
     // Should have numeric fields: revenue, cost (revenue may have ✓ if auto-selected)
     const fieldNames = menuItems.map((el) => el.textContent || "");
@@ -1363,7 +1365,9 @@ describe("DataCharts", () => {
   });
 
   test("clicking an already-selected Y-axis field deselects it", () => {
-    const { getAllByRole, queryByText } = render(React.createElement(DataCharts, { result: mockNumericResult, maskingEnabled: false }));
+    const { getAllByRole, queryByText } = render(
+      React.createElement(DataCharts, { result: mockNumericResult, maskingEnabled: false }),
+    );
     // revenue is auto-selected as the first numeric field
     expect(queryByText("Select fields")).toBeNull();
     const revenueItem = getAllByRole("menuitem").find((i) => i.textContent?.includes("revenue"));
